@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 /* --- Cabeçalho de Controle de cada Nó no Disco --- */
 typedef struct {
@@ -444,52 +445,93 @@ int bplus_insert(BPlusTree *arvore, void *key, void *value) {
 
 /* --- Remoção --- */
 
+typedef struct {
+    void *chave;
+    void *valor;
+} RegistroTemporario;
+
 int bplus_remove(BPlusTree *arvore, void *key) {
     if (arvore->offset_raiz == -1) return 0;
+
     long offset_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho = ler_cabecalho(arvore, offset_atual);
-
     while (!cabecalho.eh_folha) {
-        int i = 0;
-        for (i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
-            void *ck = arvore->ler_chave(arvore->arquivo);
-            if (arvore->comparar(key, ck) < 0) { free(ck); break; }
-            free(ck);
-        }
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_atual, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_atual, 0), SEEK_SET);
         fread(&offset_atual, sizeof(long), 1, arvore->arquivo);
         cabecalho = ler_cabecalho(arvore, offset_atual);
     }
 
-    int indice_remocao = -1;
-    for (int i = 0; i < cabecalho.num_chaves; i++) {
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
-        void *ck = arvore->ler_chave(arvore->arquivo);
-        if (arvore->comparar(key, ck) == 0) {
-            indice_remocao = i; free(ck); break;
+    RegistroTemporario *registros = NULL;
+    int quantidade = 0;
+    int encontrado = 0;
+
+    while (offset_atual != -1) {
+        cabecalho = ler_cabecalho(arvore, offset_atual);
+
+        for (int i = 0; i < cabecalho.num_chaves; i++) {
+            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            void *chave_atual = arvore->ler_chave(arvore->arquivo);
+            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
+            void *valor_atual = arvore->ler_valor(arvore->arquivo);
+
+            if (arvore->comparar(key, chave_atual) == 0) {
+                encontrado = 1;
+                free(chave_atual);
+                free(valor_atual);
+            } else {
+                RegistroTemporario *novo_vetor = realloc(registros, (quantidade + 1) * sizeof(RegistroTemporario));
+                if (!novo_vetor) {
+                    free(chave_atual);
+                    free(valor_atual);
+                    for (int j = 0; j < quantidade; j++) {
+                        free(registros[j].chave);
+                        free(registros[j].valor);
+                    }
+                    free(registros);
+                    return 0;
+                }
+
+                registros = novo_vetor;
+                registros[quantidade].chave = chave_atual;
+                registros[quantidade].valor = valor_atual;
+                quantidade++;
+            }
         }
-        free(ck);
+
+        offset_atual = cabecalho.proxima_folha;
     }
 
-    if (indice_remocao == -1) return 0; 
-
-    for (int j = indice_remocao; j < cabecalho.num_chaves - 1; j++) {
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, j + 1), SEEK_SET);
-        void *tk = arvore->ler_chave(arvore->arquivo);
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, j), SEEK_SET);
-        arvore->escrever_chave(tk, arvore->arquivo);
-        free(tk);
-
-        fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, j + 1), SEEK_SET);
-        void *tv = arvore->ler_valor(arvore->arquivo);
-        fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, j), SEEK_SET);
-        arvore->escrever_valor(tv, arvore->arquivo);
-        free(tv);
+    if (!encontrado) {
+        for (int i = 0; i < quantidade; i++) {
+            free(registros[i].chave);
+            free(registros[i].valor);
+        }
+        free(registros);
+        return 0;
     }
 
-    cabecalho.num_chaves--;
-    escrever_cabecalho(arvore, offset_atual, &cabecalho);
+    fflush(arvore->arquivo);
+    if (ftruncate(fileno(arvore->arquivo), 0) != 0) {
+        for (int i = 0; i < quantidade; i++) {
+            free(registros[i].chave);
+            free(registros[i].valor);
+        }
+        free(registros);
+        return 0;
+    }
+
+    rewind(arvore->arquivo);
+    arvore->offset_raiz = -1;
+    fwrite(&arvore->offset_raiz, sizeof(long), 1, arvore->arquivo);
+    fflush(arvore->arquivo);
+
+    for (int i = 0; i < quantidade; i++) {
+        bplus_insert(arvore, registros[i].chave, registros[i].valor);
+        free(registros[i].chave);
+        free(registros[i].valor);
+    }
+
+    free(registros);
     return 1;
 }
 
