@@ -106,7 +106,7 @@ static long criar_no_folha(BPlusTree *arvore) {
 
 /* --- Inicialização e Destruição --- */
 
-BPlusTree* arvore_bmais_criar(const char *nome_arquivo, int ordem, FuncaoComparar comparar,
+BPlusTree* criar_bmais(const char *nome_arquivo, int ordem, FuncaoComparar comparar,
                               FuncaoTamanho tamanho_chave, FuncaoTamanho tamanho_valor,
                               FuncaoEscrever escrever_chave, FuncaoLer ler_chave,
                               FuncaoEscrever escrever_valor, FuncaoLer ler_valor) {
@@ -133,7 +133,7 @@ BPlusTree* arvore_bmais_criar(const char *nome_arquivo, int ordem, FuncaoCompara
     return arvore;
 }
 
-void arvore_bmais_destruir(BPlusTree *arvore) {
+void destruir_bmais(BPlusTree *arvore) {
     if (arvore) {
         if (arvore->arquivo) fclose(arvore->arquivo);
         free(arvore);
@@ -142,7 +142,7 @@ void arvore_bmais_destruir(BPlusTree *arvore) {
 
 /* --- Operação de Busca --- */
 
-void* arvore_bmais_buscar(BPlusTree *arvore, void *chave) {
+void* buscar_bmais(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return NULL;
     long deslocamento_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho;
@@ -321,7 +321,7 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
 
 /* --- Inserção e Split de Folha --- */
 
-int arvore_bmais_inserir(BPlusTree *arvore, void *chave, void *valor) {
+int inserir_bmais(BPlusTree *arvore, void *chave, void *valor) {
     if (arvore->offset_raiz == -1) {
         arvore->offset_raiz = criar_no_folha(arvore);
         fseek(arvore->arquivo, 0, SEEK_SET);
@@ -451,7 +451,7 @@ typedef struct {
     void *valor;
 } RegistroTemporario;
 
-int arvore_bmais_remover(BPlusTree *arvore, void *chave) {
+int remover_bmais(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return 0;
 
     long offset_atual = arvore->offset_raiz;
@@ -527,7 +527,7 @@ int arvore_bmais_remover(BPlusTree *arvore, void *chave) {
     fflush(arvore->arquivo);
 
     for (int i = 0; i < quantidade; i++) {
-        arvore_bmais_inserir(arvore, registros[i].chave, registros[i].valor);
+        inserir_bmais(arvore, registros[i].chave, registros[i].valor);
         free(registros[i].chave);
         free(registros[i].valor);
     }
@@ -538,7 +538,7 @@ int arvore_bmais_remover(BPlusTree *arvore, void *chave) {
 
 /* --- Buscas Extras --- */
 
-void arvore_bmais_buscar_intervalo(BPlusTree *arvore, void *chave_a, void *chave_b, void (*imprimir_func)(void *valor)) {
+void buscar_intervalo_bmais(BPlusTree *arvore, void *chave_a, void *chave_b, void (*imprimir_func)(void *valor)) {
     if (arvore->offset_raiz == -1) return;
     long offset_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho = ler_cabecalho(arvore, offset_atual);
@@ -602,7 +602,7 @@ static void imprimir_no_recursivo(BPlusTree *arvore, long deslocamento, int nive
     }
 }
 
-void arvore_bmais_imprimir_estrutura(BPlusTree *arvore, void (*imprimir_chave)(void *chave)) {
+void imprimir_estrutura_bmais(BPlusTree *arvore, void (*imprimir_chave)(void *chave)) {
     if (arvore->offset_raiz == -1) { printf("[ESTRUTURA] Arvore Vazia.\n"); return; }
     imprimir_no_recursivo(arvore, arvore->offset_raiz, 0, imprimir_chave);
 }

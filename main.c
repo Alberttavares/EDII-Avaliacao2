@@ -164,7 +164,7 @@ void ler_dados_cadastrais(Funcionario *funcionario) {
 
 int main() {
     // Cria ou abre a Árvore B+ em disco (Arquivo "rh_dados.bin", Ordem 5)
-    BPlusTree *arvore = arvore_bmais_criar("rh_dados.bin", 5, 
+    BPlusTree *arvore = criar_bmais("rh_dados.bin", 5, 
                                      compara_chaves_rh, 
                                      tamanho_chave_rh, tamanho_valor_rh, 
                                      escreve_chave_rh, le_chave_rh, 
@@ -206,7 +206,7 @@ int main() {
                 limpar_entrada();
 
                 // Verifica se já existe
-                Funcionario *existente = (Funcionario*) arvore_bmais_buscar(arvore, &novo.chave);
+                Funcionario *existente = (Funcionario*) buscar_bmais(arvore, &novo.chave);
                 if (existente) {
                     printf("\n[AVISO] Funcionario ja cadastrado!\n");
                     imprimir_ficha_completa(existente);
@@ -217,10 +217,10 @@ int main() {
                     if (update == 1) {
                         novo = *existente;
                         // Na B+, remover e inserir novamente evita sobrescrita parcial de registro.
-                        arvore_bmais_remover(arvore, &novo.chave);
+                        remover_bmais(arvore, &novo.chave);
                         printf("\n--- Atualizacao dos Dados Cadastrais ---\n");
                         ler_dados_cadastrais(&novo);
-                        arvore_bmais_inserir(arvore, &novo.chave, &novo);
+                        inserir_bmais(arvore, &novo.chave, &novo);
                         printf("Atualizacao concluida.\n");
                     }
                     free(existente);
@@ -231,7 +231,7 @@ int main() {
                 
                 // Histórico inicia vazio graças ao memset inicial
 
-                if (arvore_bmais_inserir(arvore, &novo.chave, &novo)) {
+                if (inserir_bmais(arvore, &novo.chave, &novo)) {
                     printf("\nFuncionario cadastrado com sucesso no disco!\n");
                 } else {
                     printf("\nErro ao gravar no disco.\n");
@@ -254,7 +254,7 @@ int main() {
 
                 printf("\nProcurando registros...\n");
                 qtd_resultados_busca = 0;
-                arvore_bmais_buscar_intervalo(arvore, &chave_min, &chave_max, registrar_funcionario_busca);
+                buscar_intervalo_bmais(arvore, &chave_min, &chave_max, registrar_funcionario_busca);
 
                 if (qtd_resultados_busca == 0) {
                     printf("Nenhum registro correspondente encontrado.\n");
@@ -271,7 +271,7 @@ int main() {
                     limpar_entrada();
                 }
 
-                Funcionario *encontrado = (Funcionario*) arvore_bmais_buscar(arvore, &chave_exata);
+                Funcionario *encontrado = (Funcionario*) buscar_bmais(arvore, &chave_exata);
                 
                 if (!encontrado) {
                     printf("Nenhum registro correspondente encontrado.\n");
@@ -290,7 +290,7 @@ int main() {
                     limpar_entrada();
                     
                     if (conf == 1) {
-                        if(arvore_bmais_remover(arvore, &chave_exata)) {
+                        if(remover_bmais(arvore, &chave_exata)) {
                             printf("Funcionario excluido com sucesso.\n");
                         } else {
                             printf("Erro na exclusao.\n");
@@ -316,16 +316,16 @@ int main() {
                 chaveB.nome[strcspn(chaveB.nome, "\n")] = 0;
 
                 printf("\nListando funcionarios no intervalo aberto (%s, %s):\n", chaveA.nome, chaveB.nome);
-                arvore_bmais_buscar_intervalo(arvore, &chaveA, &chaveB, imprimir_funcionario_resumido);
+                buscar_intervalo_bmais(arvore, &chaveA, &chaveB, imprimir_funcionario_resumido);
                 break;
             }
             case 5: { // EXIBIR ESTRUTURA
-                arvore_bmais_imprimir_estrutura(arvore, imprimir_chave_bmais);
+                imprimir_estrutura_bmais(arvore, imprimir_chave_bmais);
                 break;
             }
             case 6: // SAIR
                 printf("\nSincronizando e fechando arquivo em disco...\n");
-                arvore_bmais_destruir(arvore);
+                destruir_bmais(arvore);
                 arvore = NULL;
                 printf("Programa encerrado com seguranca.\n");
                 break;
