@@ -76,15 +76,15 @@ void imprimir_ficha_sem_historico(Funcionario *f) {
 }
 
 // Callback para imprimir chave na visualização estrutural da B+
-void imprimir_chave_bplus(void *key) {
-    ChaveRH *k = (ChaveRH*) key;
+void imprimir_chave_bmais(void *chave) {
+    ChaveRH *k = (ChaveRH*) chave;
     // Pega só o primeiro nome
     char primeiro_nome[50];
     sscanf(k->nome, "%49s", primeiro_nome);
     printf("(%s, %02d/%02d/%04d)", primeiro_nome, k->data_nascimento.dia, k->data_nascimento.mes, k->data_nascimento.ano);
 }
 
-void limpar_buffer() {
+void limpar_entrada() {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
 }
@@ -120,7 +120,7 @@ void ler_campo_texto(const char *rotulo, char *destino, size_t tamanho) {
     if (destino[pos_quebra] == '\n') {
         destino[pos_quebra] = 0;
     } else {
-        limpar_buffer();
+        limpar_entrada();
     }
 }
 
@@ -164,7 +164,7 @@ void ler_dados_cadastrais(Funcionario *funcionario) {
 
 int main() {
     // Cria ou abre a Árvore B+ em disco (Arquivo "rh_dados.bin", Ordem 5)
-    BPlusTree *arvore = bplus_create("rh_dados.bin", 5, 
+    BPlusTree *arvore = arvore_bmais_criar("rh_dados.bin", 5, 
                                      compara_chaves_rh, 
                                      tamanho_chave_rh, tamanho_valor_rh, 
                                      escreve_chave_rh, le_chave_rh, 
@@ -188,8 +188,8 @@ int main() {
         printf("| 6. Sair                              |\n");
         printf("========================================\n");
         printf("Opcao: ");
-        if (scanf("%d", &opcao) != 1) { limpar_buffer(); opcao = 0; }
-        limpar_buffer();
+        if (scanf("%d", &opcao) != 1) { limpar_entrada(); opcao = 0; }
+        limpar_entrada();
 
         switch (opcao) {
             case 1: { // INSERIR
@@ -203,24 +203,24 @@ int main() {
                 
                 printf("Data de Nascimento (DD MM AAAA): ");
                 scanf("%d %d %d", &novo.chave.data_nascimento.dia, &novo.chave.data_nascimento.mes, &novo.chave.data_nascimento.ano);
-                limpar_buffer();
+                limpar_entrada();
 
                 // Verifica se já existe
-                Funcionario *existente = (Funcionario*) bplus_search(arvore, &novo.chave);
+                Funcionario *existente = (Funcionario*) arvore_bmais_buscar(arvore, &novo.chave);
                 if (existente) {
                     printf("\n[AVISO] Funcionario ja cadastrado!\n");
                     imprimir_ficha_completa(existente);
                     printf("\nDeseja realizar atualizacao de dados? (1-Sim / 0-Nao): ");
                     int update;
                     scanf("%d", &update);
-                    limpar_buffer();
+                    limpar_entrada();
                     if (update == 1) {
                         novo = *existente;
                         // Na B+, remover e inserir novamente evita sobrescrita parcial de registro.
-                        bplus_remove(arvore, &novo.chave);
+                        arvore_bmais_remover(arvore, &novo.chave);
                         printf("\n--- Atualizacao dos Dados Cadastrais ---\n");
                         ler_dados_cadastrais(&novo);
-                        bplus_insert(arvore, &novo.chave, &novo);
+                        arvore_bmais_inserir(arvore, &novo.chave, &novo);
                         printf("Atualizacao concluida.\n");
                     }
                     free(existente);
@@ -231,7 +231,7 @@ int main() {
                 
                 // Histórico inicia vazio graças ao memset inicial
 
-                if (bplus_insert(arvore, &novo.chave, &novo)) {
+                if (arvore_bmais_inserir(arvore, &novo.chave, &novo)) {
                     printf("\nFuncionario cadastrado com sucesso no disco!\n");
                 } else {
                     printf("\nErro ao gravar no disco.\n");
@@ -254,7 +254,7 @@ int main() {
 
                 printf("\nProcurando registros...\n");
                 qtd_resultados_busca = 0;
-                bplus_range_search(arvore, &chave_min, &chave_max, registrar_funcionario_busca);
+                arvore_bmais_buscar_intervalo(arvore, &chave_min, &chave_max, registrar_funcionario_busca);
 
                 if (qtd_resultados_busca == 0) {
                     printf("Nenhum registro correspondente encontrado.\n");
@@ -268,10 +268,10 @@ int main() {
                     printf("\nForam encontrados homonimos. Digite a data de nascimento exata do funcionario (DD MM AAAA): ");
                     strcpy(chave_exata.nome, nome_busca);
                     scanf("%d %d %d", &chave_exata.data_nascimento.dia, &chave_exata.data_nascimento.mes, &chave_exata.data_nascimento.ano);
-                    limpar_buffer();
+                    limpar_entrada();
                 }
 
-                Funcionario *encontrado = (Funcionario*) bplus_search(arvore, &chave_exata);
+                Funcionario *encontrado = (Funcionario*) arvore_bmais_buscar(arvore, &chave_exata);
                 
                 if (!encontrado) {
                     printf("Nenhum registro correspondente encontrado.\n");
@@ -287,10 +287,10 @@ int main() {
                     printf("\nTem certeza que deseja excluir permanentemente do disco? (1-Sim / 0-Nao): ");
                     int conf;
                     scanf("%d", &conf);
-                    limpar_buffer();
+                    limpar_entrada();
                     
                     if (conf == 1) {
-                        if(bplus_remove(arvore, &chave_exata)) {
+                        if(arvore_bmais_remover(arvore, &chave_exata)) {
                             printf("Funcionario excluido com sucesso.\n");
                         } else {
                             printf("Erro na exclusao.\n");
@@ -316,16 +316,16 @@ int main() {
                 chaveB.nome[strcspn(chaveB.nome, "\n")] = 0;
 
                 printf("\nListando funcionarios no intervalo aberto (%s, %s):\n", chaveA.nome, chaveB.nome);
-                bplus_range_search(arvore, &chaveA, &chaveB, imprimir_funcionario_resumido);
+                arvore_bmais_buscar_intervalo(arvore, &chaveA, &chaveB, imprimir_funcionario_resumido);
                 break;
             }
             case 5: { // EXIBIR ESTRUTURA
-                bplus_print_structure(arvore, imprimir_chave_bplus);
+                arvore_bmais_imprimir_estrutura(arvore, imprimir_chave_bmais);
                 break;
             }
             case 6: // SAIR
                 printf("\nSincronizando e fechando arquivo em disco...\n");
-                bplus_destroy(arvore);
+                arvore_bmais_destruir(arvore);
                 arvore = NULL;
                 printf("Programa encerrado com seguranca.\n");
                 break;

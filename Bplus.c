@@ -32,28 +32,28 @@ struct BPlusTree {
     int ordem;
     long offset_raiz;
     
-    CompareFunc comparar;
-    SizeFunc tamanho_chave;
-    SizeFunc tamanho_valor;
-    WriteFunc escrever_chave;
-    ReadFunc ler_chave;
-    WriteFunc escrever_valor;
-    ReadFunc ler_valor;
+    FuncaoComparar comparar;
+    FuncaoTamanho tamanho_chave;
+    FuncaoTamanho tamanho_valor;
+    FuncaoEscrever escrever_chave;
+    FuncaoLer ler_chave;
+    FuncaoEscrever escrever_valor;
+    FuncaoLer ler_valor;
 };
 
 /* --- Funções de Cálculo de Offsets Genéricos --- */
 
-static long obter_offset_chave(BPlusTree *arvore, long offset_no, int indice) {
-    return offset_no + sizeof(CabecalhoNo) + (indice * arvore->tamanho_chave(NULL));
+static long obter_deslocamento_chave(BPlusTree *arvore, long deslocamento_no, int indice) {
+    return deslocamento_no + sizeof(CabecalhoNo) + (indice * arvore->tamanho_chave(NULL));
 }
 
-static long obter_offset_valor(BPlusTree *arvore, long offset_no, int indice) {
-    long inicio_valores = offset_no + sizeof(CabecalhoNo) + ((arvore->ordem - 1) * arvore->tamanho_chave(NULL));
+static long obter_deslocamento_valor(BPlusTree *arvore, long deslocamento_no, int indice) {
+    long inicio_valores = deslocamento_no + sizeof(CabecalhoNo) + ((arvore->ordem - 1) * arvore->tamanho_chave(NULL));
     return inicio_valores + (indice * arvore->tamanho_valor(NULL));
 }
 
-static long obter_offset_ponteiro(BPlusTree *arvore, long offset_no, int indice) {
-    long inicio_ponteiros = offset_no + sizeof(CabecalhoNo) + 
+static long obter_deslocamento_ponteiro(BPlusTree *arvore, long deslocamento_no, int indice) {
+    long inicio_ponteiros = deslocamento_no + sizeof(CabecalhoNo) + 
                             ((arvore->ordem - 1) * arvore->tamanho_chave(NULL)) + 
                             ((arvore->ordem - 1) * arvore->tamanho_valor(NULL));
     return inicio_ponteiros + (indice * sizeof(long));
@@ -62,7 +62,7 @@ static long obter_offset_ponteiro(BPlusTree *arvore, long offset_no, int indice)
 /* --- O CORAÇÃO DA CORREÇÃO: Alocação Segura de Bloco --- */
 static long alocar_novo_no(BPlusTree *arvore) {
     fseek(arvore->arquivo, 0, SEEK_END);
-    long offset = ftell(arvore->arquivo);
+    long deslocamento = ftell(arvore->arquivo);
     
     // Calcula o tamanho máximo exato do nó e preenche com zeros (padding)
     size_t tam_chaves = (arvore->ordem - 1) * arvore->tamanho_chave(NULL);
@@ -75,7 +75,7 @@ static long alocar_novo_no(BPlusTree *arvore) {
     free(zeros);
     fflush(arvore->arquivo);
     
-    return offset;
+    return deslocamento;
 }
 
 /* --- Funções de I/O em Disco --- */
@@ -106,16 +106,17 @@ static long criar_no_folha(BPlusTree *arvore) {
 
 /* --- Inicialização e Destruição --- */
 
-BPlusTree* bplus_create(const char *filename, int order, CompareFunc cmp, 
-                        SizeFunc key_size, SizeFunc val_size,
-                        WriteFunc write_k, ReadFunc read_k, WriteFunc write_v, ReadFunc read_v) {
+BPlusTree* arvore_bmais_criar(const char *nome_arquivo, int ordem, FuncaoComparar comparar,
+                              FuncaoTamanho tamanho_chave, FuncaoTamanho tamanho_valor,
+                              FuncaoEscrever escrever_chave, FuncaoLer ler_chave,
+                              FuncaoEscrever escrever_valor, FuncaoLer ler_valor) {
     
     BPlusTree *arvore = (BPlusTree*) malloc(sizeof(BPlusTree));
     if (!arvore) return NULL;
 
-    arvore->arquivo = fopen(filename, "r+b");
+    arvore->arquivo = fopen(nome_arquivo, "r+b");
     if (!arvore->arquivo) {
-        arvore->arquivo = fopen(filename, "w+b");
+        arvore->arquivo = fopen(nome_arquivo, "w+b");
         if (!arvore->arquivo) { free(arvore); return NULL; }
         arvore->offset_raiz = -1;
         fseek(arvore->arquivo, 0, SEEK_SET);
@@ -126,13 +127,13 @@ BPlusTree* bplus_create(const char *filename, int order, CompareFunc cmp,
         fread(&arvore->offset_raiz, sizeof(long), 1, arvore->arquivo);
     }
 
-    arvore->ordem = order; arvore->comparar = cmp; arvore->tamanho_chave = key_size;
-    arvore->tamanho_valor = val_size; arvore->escrever_chave = write_k;
-    arvore->ler_chave = read_k; arvore->escrever_valor = write_v; arvore->ler_valor = read_v;
+    arvore->ordem = ordem; arvore->comparar = comparar; arvore->tamanho_chave = tamanho_chave;
+    arvore->tamanho_valor = tamanho_valor; arvore->escrever_chave = escrever_chave;
+    arvore->ler_chave = ler_chave; arvore->escrever_valor = escrever_valor; arvore->ler_valor = ler_valor;
     return arvore;
 }
 
-void bplus_destroy(BPlusTree *arvore) {
+void arvore_bmais_destruir(BPlusTree *arvore) {
     if (arvore) {
         if (arvore->arquivo) fclose(arvore->arquivo);
         free(arvore);
@@ -141,7 +142,7 @@ void bplus_destroy(BPlusTree *arvore) {
 
 /* --- Operação de Busca --- */
 
-void* bplus_search(BPlusTree *arvore, void *key) {
+void* arvore_bmais_buscar(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return NULL;
     long deslocamento_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho;
@@ -150,27 +151,27 @@ void* bplus_search(BPlusTree *arvore, void *key) {
         cabecalho = ler_cabecalho(arvore, deslocamento_atual);
         int i = 0;
         for (i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, deslocamento_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, deslocamento_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            int cmp = arvore->comparar(key, ck);
+            int comparacao = arvore->comparar(chave, ck);
             free(ck);
-            if (cmp < 0) break;
+            if (comparacao < 0) break;
         }
 
         if (cabecalho.eh_folha) {
             for (int j = 0; j < cabecalho.num_chaves; j++) {
-                fseek(arvore->arquivo, obter_offset_chave(arvore, deslocamento_atual, j), SEEK_SET);
+                fseek(arvore->arquivo, obter_deslocamento_chave(arvore, deslocamento_atual, j), SEEK_SET);
                 void *chave_folha = arvore->ler_chave(arvore->arquivo);
-                if (arvore->comparar(key, chave_folha) == 0) {
+                if (arvore->comparar(chave, chave_folha) == 0) {
                     free(chave_folha);
-                    fseek(arvore->arquivo, obter_offset_valor(arvore, deslocamento_atual, j), SEEK_SET);
+                    fseek(arvore->arquivo, obter_deslocamento_valor(arvore, deslocamento_atual, j), SEEK_SET);
                     return arvore->ler_valor(arvore->arquivo);
                 }
                 free(chave_folha);
             }
             return NULL;
         } else {
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, deslocamento_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, deslocamento_atual, i), SEEK_SET);
             fread(&deslocamento_atual, sizeof(long), 1, arvore->arquivo);
         }
     }
@@ -187,9 +188,9 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
         CabecalhoNo cab_raiz = { .eh_folha = false, .num_chaves = 1, .offset_pai = -1, .proxima_folha = -1 };
         escrever_cabecalho(arvore, nova_raiz, &cab_raiz);
 
-        fseek(arvore->arquivo, obter_offset_chave(arvore, nova_raiz, 0), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_chave(arvore, nova_raiz, 0), SEEK_SET);
         arvore->escrever_chave(chave_promovida, arvore->arquivo);
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, nova_raiz, 0), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, nova_raiz, 0), SEEK_SET);
         fwrite(&offset_esq, sizeof(long), 1, arvore->arquivo);
         fwrite(&offset_dir, sizeof(long), 1, arvore->arquivo);
 
@@ -212,30 +213,30 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
     if (cab_pai.num_chaves < arvore->ordem - 1) {
         int i = 0;
         for (i = 0; i < cab_pai.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            int cmp = arvore->comparar(chave_promovida, ck);
+            int comparacao = arvore->comparar(chave_promovida, ck);
             free(ck);
-            if (cmp < 0) break;
+            if (comparacao < 0) break;
         }
 
         for (int j = cab_pai.num_chaves; j > i; j--) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, j - 1), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, j - 1), SEEK_SET);
             void *tk = arvore->ler_chave(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, j), SEEK_SET);
             arvore->escrever_chave(tk, arvore->arquivo);
             free(tk);
 
             long temp_ptr;
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, j), SEEK_SET);
             fread(&temp_ptr, sizeof(long), 1, arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, j + 1), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, j + 1), SEEK_SET);
             fwrite(&temp_ptr, sizeof(long), 1, arvore->arquivo);
         }
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, i), SEEK_SET);
         arvore->escrever_chave(chave_promovida, arvore->arquivo);
 
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, i + 1), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, i + 1), SEEK_SET);
         fwrite(&offset_dir, sizeof(long), 1, arvore->arquivo);
 
         cab_pai.num_chaves++;
@@ -251,7 +252,7 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
 
         int i = 0;
         for (i = 0; i < cab_pai.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
             if (arvore->comparar(chave_promovida, ck) < 0) { free(ck); break; }
             free(ck);
@@ -260,15 +261,15 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
         int idx = 0;
         for (int j = 0; j < cab_pai.num_chaves; j++) {
             if (j == i) { temp_k[idx] = chave_promovida; temp_p[idx + 1] = offset_dir; idx++; }
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, j), SEEK_SET);
             temp_k[idx] = arvore->ler_chave(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, j + 1), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, j + 1), SEEK_SET);
             fread(&temp_p[idx + 1], sizeof(long), 1, arvore->arquivo);
             idx++;
         }
         if (i == cab_pai.num_chaves) { temp_k[idx] = chave_promovida; temp_p[idx + 1] = offset_dir; }
         
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, 0), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, 0), SEEK_SET);
         fread(&temp_p[0], sizeof(long), 1, arvore->arquivo);
 
         long offset_novo_pai = alocar_novo_no(arvore);
@@ -278,28 +279,28 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
         int metade = total_chaves / 2;
         cab_pai.num_chaves = metade;
         for (int j = 0; j < metade; j++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_pai, j), SEEK_SET);
             arvore->escrever_chave(temp_k[j], arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, j), SEEK_SET);
             fwrite(&temp_p[j], sizeof(long), 1, arvore->arquivo);
         }
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_pai, metade), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_pai, metade), SEEK_SET);
         fwrite(&temp_p[metade], sizeof(long), 1, arvore->arquivo);
 
         void *nova_chave_promovida = temp_k[metade];
 
         cab_np.num_chaves = total_chaves - metade - 1;
         for (int j = 0; j < cab_np.num_chaves; j++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_novo_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_novo_pai, j), SEEK_SET);
             arvore->escrever_chave(temp_k[metade + 1 + j], arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_novo_pai, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_novo_pai, j), SEEK_SET);
             fwrite(&temp_p[metade + 1 + j], sizeof(long), 1, arvore->arquivo);
             
             CabecalhoNo filho = ler_cabecalho(arvore, temp_p[metade + 1 + j]);
             filho.offset_pai = offset_novo_pai;
             escrever_cabecalho(arvore, temp_p[metade + 1 + j], &filho);
         }
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_novo_pai, cab_np.num_chaves), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_novo_pai, cab_np.num_chaves), SEEK_SET);
         fwrite(&temp_p[total_chaves], sizeof(long), 1, arvore->arquivo);
         
         CabecalhoNo ultimo_filho = ler_cabecalho(arvore, temp_p[total_chaves]);
@@ -320,7 +321,7 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
 
 /* --- Inserção e Split de Folha --- */
 
-int bplus_insert(BPlusTree *arvore, void *key, void *value) {
+int arvore_bmais_inserir(BPlusTree *arvore, void *chave, void *valor) {
     if (arvore->offset_raiz == -1) {
         arvore->offset_raiz = criar_no_folha(arvore);
         fseek(arvore->arquivo, 0, SEEK_SET);
@@ -334,51 +335,51 @@ int bplus_insert(BPlusTree *arvore, void *key, void *value) {
     while (!cabecalho.eh_folha) {
         int i = 0;
         for (i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            int cmp = arvore->comparar(key, ck);
+            int comparacao = arvore->comparar(chave, ck);
             free(ck);
-            if (cmp < 0) break;
+            if (comparacao < 0) break;
         }
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_atual, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_atual, i), SEEK_SET);
         fread(&offset_atual, sizeof(long), 1, arvore->arquivo);
         cabecalho = ler_cabecalho(arvore, offset_atual);
     }
 
     for (int i = 0; i < cabecalho.num_chaves; i++) {
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
         void *ck = arvore->ler_chave(arvore->arquivo);
-        if (arvore->comparar(key, ck) == 0) { free(ck); return 0; }
+        if (arvore->comparar(chave, ck) == 0) { free(ck); return 0; }
         free(ck);
     }
 
     if (cabecalho.num_chaves < arvore->ordem - 1) {
         int i = 0;
         for (i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            if (arvore->comparar(key, ck) < 0) { free(ck); break; }
+            if (arvore->comparar(chave, ck) < 0) { free(ck); break; }
             free(ck);
         }
 
         for (int j = cabecalho.num_chaves; j > i; j--) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, j - 1), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, j - 1), SEEK_SET);
             void *tk = arvore->ler_chave(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, j), SEEK_SET);
             arvore->escrever_chave(tk, arvore->arquivo);
             free(tk);
 
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, j - 1), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, j - 1), SEEK_SET);
             void *tv = arvore->ler_valor(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, j), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, j), SEEK_SET);
             arvore->escrever_valor(tv, arvore->arquivo);
             free(tv);
         }
 
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
-        arvore->escrever_chave(key, arvore->arquivo);
-        fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
-        arvore->escrever_valor(value, arvore->arquivo);
+        fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
+        arvore->escrever_chave(chave, arvore->arquivo);
+        fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, i), SEEK_SET);
+        arvore->escrever_valor(valor, arvore->arquivo);
 
         cabecalho.num_chaves++;
         escrever_cabecalho(arvore, offset_atual, &cabecalho);
@@ -395,35 +396,35 @@ int bplus_insert(BPlusTree *arvore, void *key, void *value) {
 
         int inserido = 0, idx_temp = 0;
         for (int i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, i), SEEK_SET);
             void *cv = arvore->ler_valor(arvore->arquivo);
 
-            if (!inserido && arvore->comparar(key, ck) < 0) {
-                temp_k[idx_temp] = key; temp_v[idx_temp] = value;
+            if (!inserido && arvore->comparar(chave, ck) < 0) {
+                temp_k[idx_temp] = chave; temp_v[idx_temp] = valor;
                 idx_temp++; inserido = 1;
             }
             temp_k[idx_temp] = ck; temp_v[idx_temp] = cv;
             idx_temp++;
         }
-        if (!inserido) { temp_k[idx_temp] = key; temp_v[idx_temp] = value; }
+        if (!inserido) { temp_k[idx_temp] = chave; temp_v[idx_temp] = valor; }
 
         int metade = total / 2;
         cabecalho.num_chaves = 0;
         for (int i = 0; i < metade; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             arvore->escrever_chave(temp_k[i], arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, i), SEEK_SET);
             arvore->escrever_valor(temp_v[i], arvore->arquivo);
             cabecalho.num_chaves++;
         }
 
         cabecalho_nova.num_chaves = 0;
         for (int i = metade; i < total; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_nova, cabecalho_nova.num_chaves), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_nova, cabecalho_nova.num_chaves), SEEK_SET);
             arvore->escrever_chave(temp_k[i], arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_nova, cabecalho_nova.num_chaves), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_nova, cabecalho_nova.num_chaves), SEEK_SET);
             arvore->escrever_valor(temp_v[i], arvore->arquivo);
             cabecalho_nova.num_chaves++;
         }
@@ -435,8 +436,8 @@ int bplus_insert(BPlusTree *arvore, void *key, void *value) {
         inserir_no_pai(arvore, offset_atual, chave_promovida, offset_nova);
 
         for (int i = 0; i < total; i++) {
-            if (temp_k[i] != key) free(temp_k[i]);
-            if (temp_v[i] != value) free(temp_v[i]);
+            if (temp_k[i] != chave) free(temp_k[i]);
+            if (temp_v[i] != valor) free(temp_v[i]);
         }
         free(temp_k); free(temp_v);
         return 1;
@@ -450,13 +451,13 @@ typedef struct {
     void *valor;
 } RegistroTemporario;
 
-int bplus_remove(BPlusTree *arvore, void *key) {
+int arvore_bmais_remover(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return 0;
 
     long offset_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho = ler_cabecalho(arvore, offset_atual);
     while (!cabecalho.eh_folha) {
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_atual, 0), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_atual, 0), SEEK_SET);
         fread(&offset_atual, sizeof(long), 1, arvore->arquivo);
         cabecalho = ler_cabecalho(arvore, offset_atual);
     }
@@ -469,12 +470,12 @@ int bplus_remove(BPlusTree *arvore, void *key) {
         cabecalho = ler_cabecalho(arvore, offset_atual);
 
         for (int i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *chave_atual = arvore->ler_chave(arvore->arquivo);
-            fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, i), SEEK_SET);
             void *valor_atual = arvore->ler_valor(arvore->arquivo);
 
-            if (arvore->comparar(key, chave_atual) == 0) {
+            if (arvore->comparar(chave, chave_atual) == 0) {
                 encontrado = 1;
                 free(chave_atual);
                 free(valor_atual);
@@ -526,7 +527,7 @@ int bplus_remove(BPlusTree *arvore, void *key) {
     fflush(arvore->arquivo);
 
     for (int i = 0; i < quantidade; i++) {
-        bplus_insert(arvore, registros[i].chave, registros[i].valor);
+        arvore_bmais_inserir(arvore, registros[i].chave, registros[i].valor);
         free(registros[i].chave);
         free(registros[i].valor);
     }
@@ -537,7 +538,7 @@ int bplus_remove(BPlusTree *arvore, void *key) {
 
 /* --- Buscas Extras --- */
 
-void bplus_range_search(BPlusTree *arvore, void *keyA, void *keyB, void (*print_func)(void *val)) {
+void arvore_bmais_buscar_intervalo(BPlusTree *arvore, void *chave_a, void *chave_b, void (*imprimir_func)(void *valor)) {
     if (arvore->offset_raiz == -1) return;
     long offset_atual = arvore->offset_raiz;
     CabecalhoNo cabecalho = ler_cabecalho(arvore, offset_atual);
@@ -545,12 +546,12 @@ void bplus_range_search(BPlusTree *arvore, void *keyA, void *keyB, void (*print_
     while (!cabecalho.eh_folha) {
         int i = 0;
         for (i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
-            if (arvore->comparar(keyA, ck) < 0) { free(ck); break; }
+            if (arvore->comparar(chave_a, ck) < 0) { free(ck); break; }
             free(ck);
         }
-        fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset_atual, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, offset_atual, i), SEEK_SET);
         fread(&offset_atual, sizeof(long), 1, arvore->arquivo);
         cabecalho = ler_cabecalho(arvore, offset_atual);
     }
@@ -559,33 +560,33 @@ void bplus_range_search(BPlusTree *arvore, void *keyA, void *keyB, void (*print_
     while (offset_atual != -1 && continuar) {
         cabecalho = ler_cabecalho(arvore, offset_atual);
         for (int i = 0; i < cabecalho.num_chaves; i++) {
-            fseek(arvore->arquivo, obter_offset_chave(arvore, offset_atual, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_chave(arvore, offset_atual, i), SEEK_SET);
             void *ck = arvore->ler_chave(arvore->arquivo);
 
-            if (arvore->comparar(ck, keyA) > 0 && arvore->comparar(ck, keyB) < 0) {
-                fseek(arvore->arquivo, obter_offset_valor(arvore, offset_atual, i), SEEK_SET);
+            if (arvore->comparar(ck, chave_a) > 0 && arvore->comparar(ck, chave_b) < 0) {
+                fseek(arvore->arquivo, obter_deslocamento_valor(arvore, offset_atual, i), SEEK_SET);
                 void *valor_lido = arvore->ler_valor(arvore->arquivo);
-                print_func(valor_lido);
+                imprimir_func(valor_lido);
                 free(valor_lido);
             }
-            if (arvore->comparar(ck, keyB) >= 0) { continuar = false; free(ck); break; }
+            if (arvore->comparar(ck, chave_b) >= 0) { continuar = false; free(ck); break; }
             free(ck);
         }
         offset_atual = cabecalho.proxima_folha;
     }
 }
 
-static void imprimir_no_recursivo(BPlusTree *arvore, long offset, int nivel, void (*print_key)(void *key)) {
-    if (offset == -1) return;
-    CabecalhoNo cabecalho = ler_cabecalho(arvore, offset);
+static void imprimir_no_recursivo(BPlusTree *arvore, long deslocamento, int nivel, void (*imprimir_chave)(void *chave)) {
+    if (deslocamento == -1) return;
+    CabecalhoNo cabecalho = ler_cabecalho(arvore, deslocamento);
     
     for (int i = 0; i < nivel; i++) printf("    ");
-    printf("[%s] Nivel %d (Offset: %ld): ", cabecalho.eh_folha ? "FOLHA" : "INTERNO", nivel, offset);
+    printf("[%s] Nivel %d (Deslocamento: %ld): ", cabecalho.eh_folha ? "FOLHA" : "INTERNO", nivel, deslocamento);
     
     for (int i = 0; i < cabecalho.num_chaves; i++) {
-        fseek(arvore->arquivo, obter_offset_chave(arvore, offset, i), SEEK_SET);
+        fseek(arvore->arquivo, obter_deslocamento_chave(arvore, deslocamento, i), SEEK_SET);
         void *ck = arvore->ler_chave(arvore->arquivo);
-        print_key(ck);
+        imprimir_chave(ck);
         printf(" | ");
         free(ck);
     }
@@ -594,14 +595,14 @@ static void imprimir_no_recursivo(BPlusTree *arvore, long offset, int nivel, voi
     if (!cabecalho.eh_folha) {
         for (int i = 0; i <= cabecalho.num_chaves; i++) {
             long offset_filho;
-            fseek(arvore->arquivo, obter_offset_ponteiro(arvore, offset, i), SEEK_SET);
+            fseek(arvore->arquivo, obter_deslocamento_ponteiro(arvore, deslocamento, i), SEEK_SET);
             fread(&offset_filho, sizeof(long), 1, arvore->arquivo);
-            imprimir_no_recursivo(arvore, offset_filho, nivel + 1, print_key);
+            imprimir_no_recursivo(arvore, offset_filho, nivel + 1, imprimir_chave);
         }
     }
 }
 
-void bplus_print_structure(BPlusTree *arvore, void (*print_key)(void *key)) {
+void arvore_bmais_imprimir_estrutura(BPlusTree *arvore, void (*imprimir_chave)(void *chave)) {
     if (arvore->offset_raiz == -1) { printf("[ESTRUTURA] Arvore Vazia.\n"); return; }
-    imprimir_no_recursivo(arvore, arvore->offset_raiz, 0, print_key);
+    imprimir_no_recursivo(arvore, arvore->offset_raiz, 0, imprimir_chave);
 }

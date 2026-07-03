@@ -19,65 +19,65 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-/* --- Callbacks para manipulação de tipos genéricos em disco --- */
-typedef int (*CompareFunc)(const void *key1, const void *key2);
-typedef size_t (*SizeFunc)(const void *data);
-typedef void (*WriteFunc)(const void *data, FILE *stream);
-typedef void *(*ReadFunc)(FILE *stream);
+/* --- Funções de retorno para manipulação de tipos genéricos em disco --- */
+typedef int (*FuncaoComparar)(const void *chave1, const void *chave2);
+typedef size_t (*FuncaoTamanho)(const void *dado);
+typedef void (*FuncaoEscrever)(const void *dado, FILE *fluxo);
+typedef void *(*FuncaoLer)(FILE *fluxo);
 
 /* --- Estrutura Opaca da Árvore B+ --- */
 typedef struct BPlusTree BPlusTree;
 
 /**
  * @brief Cria ou abre uma Árvore B+ em disco.
- * * @param filename Nome do arquivo binário.
- * @param order Ordem da árvore B+.
- * @param cmp Função para comparar as chaves.
- * @param key_size Função que retorna o tamanho da chave em bytes.
- * @param val_size Função que retorna o tamanho do registro em bytes.
- * @param write_k Função para serializar a chave no disco.
- * @param read_k Função para desserializar a chave do disco.
- * @param write_v Função para serializar o registro no disco.
- * @param read_v Função para desserializar o registro do disco.
+ * * @param nome_arquivo Nome do arquivo binário.
+ * @param ordem Ordem da árvore B+.
+ * @param comparar Função para comparar as chaves.
+ * @param tamanho_chave Função que retorna o tamanho da chave em bytes.
+ * @param tamanho_valor Função que retorna o tamanho do registro em bytes.
+ * @param escrever_chave Função para serializar a chave no disco.
+ * @param ler_chave Função para desserializar a chave do disco.
+ * @param escrever_valor Função para serializar o registro no disco.
+ * @param ler_valor Função para desserializar o registro do disco.
  * @return BPlusTree* Ponteiro para o controlador da árvore.
  */
-BPlusTree* bplus_create(const char *filename, int order,
-                        CompareFunc cmp, 
-                        SizeFunc key_size, SizeFunc val_size,
-                        WriteFunc write_k, ReadFunc read_k,
-                        WriteFunc write_v, ReadFunc read_v);
+BPlusTree* arvore_bmais_criar(const char *nome_arquivo, int ordem,
+                              FuncaoComparar comparar,
+                              FuncaoTamanho tamanho_chave, FuncaoTamanho tamanho_valor,
+                              FuncaoEscrever escrever_chave, FuncaoLer ler_chave,
+                              FuncaoEscrever escrever_valor, FuncaoLer ler_valor);
 
 /**
  * @brief Insere um par chave-valor na árvore em disco.
  * * @return 1 se sucesso, 0 se duplicado ou erro.
  */
-int bplus_insert(BPlusTree *tree, void *key, void *value);
+int arvore_bmais_inserir(BPlusTree *arvore, void *chave, void *valor);
 
 /**
  * @brief Busca um registro pela chave.
  * * @return Ponteiro alocado para o valor (deve ser liberado pelo usuário), ou NULL se não achar.
  */
-void* bplus_search(BPlusTree *tree, void *key);
+void* arvore_bmais_buscar(BPlusTree *arvore, void *chave);
 
 /**
  * @brief Remove um registro a partir da chave.
  * * @return 1 se sucesso, 0 se não encontrado.
  */
-int bplus_remove(BPlusTree *tree, void *key);
+int arvore_bmais_remover(BPlusTree *arvore, void *chave);
 
 /**
- * @brief Lista registros contidos em um intervalo aberto (keyA, keyB).
+ * @brief Lista registros contidos em um intervalo aberto (chave_a, chave_b).
  */
-void bplus_range_search(BPlusTree *tree, void *keyA, void *keyB, void (*print_func)(void *val));
+void arvore_bmais_buscar_intervalo(BPlusTree *arvore, void *chave_a, void *chave_b, void (*imprimir_func)(void *valor));
 
 /**
  * @brief Imprime a estrutura hierárquica do índice para depuração.
  */
-void bplus_print_structure(BPlusTree *tree, void (*print_key)(void *key));
+void arvore_bmais_imprimir_estrutura(BPlusTree *arvore, void (*imprimir_chave)(void *chave));
 
 /**
  * @brief Fecha os arquivos e libera o controlador da memória RAM.
  */
-void bplus_destroy(BPlusTree *tree);
+void arvore_bmais_destruir(BPlusTree *arvore);
 
 #endif /* BPLUS_H */
