@@ -179,12 +179,35 @@ int data_valida(Data data) {
     return data.dia <= dias_mes[data.mes];
 }
 
+int formato_data_valido(const char *entrada) {
+    if (strlen(entrada) != 10) {
+        return 0;
+    }
+
+    if (!((entrada[2] == '/' && entrada[5] == '/') ||
+          (entrada[2] == ' ' && entrada[5] == ' '))) {
+        return 0;
+    }
+
+    for (int i = 0; i < 10; i++) {
+        if (i == 2 || i == 5) {
+            continue;
+        }
+        if (!isdigit((unsigned char)entrada[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 int texto_para_data(const char *entrada, Data *destino) {
     Data data_lida;
     char extra;
 
-    if ((sscanf(entrada, " %d/%d/%d %c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3 ||
-         sscanf(entrada, " %d %d %d %c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3) &&
+    if (formato_data_valido(entrada) &&
+        (sscanf(entrada, "%d/%d/%d%c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3 ||
+         sscanf(entrada, "%d %d %d%c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3) &&
         data_valida(data_lida)) {
         *destino = data_lida;
         return 1;
@@ -208,9 +231,20 @@ void ler_data(const char *rotulo, Data *destino) {
             *destino = data_lida;
             data_ok = 1;
         } else {
-            printf("Data invalida. Use DD/MM/AAAA ou DD MM AAAA.\n");
+            printf("Data invalida. Use exatamente DD/MM/AAAA ou DD MM AAAA.\n");
         }
     } while (!data_ok);
+}
+
+void montar_limite_superior_prefixo(const char *prefixo, char *destino, size_t tamanho) {
+    snprintf(destino, tamanho, "%s", prefixo);
+    size_t len = strlen(destino);
+
+    if (len == 0) {
+        return;
+    }
+
+    destino[len - 1] = (char)(destino[len - 1] + 1);
 }
 
 void ler_data_texto(const char *rotulo, char *destino, size_t tamanho) {
@@ -361,11 +395,11 @@ int main() {
                 printf("\n--- Pesquisa ---\n");
                 ler_campo_obrigatorio("Nome do funcionario: ", nome_busca, sizeof(nome_busca));
 
-                // Cria intervalo falso para achar todos os homônimos
+                // Cria intervalo por prefixo para achar nomes completos e parciais.
                 ChaveRH chave_min = { .data_nascimento = {0, 0, 0} };
                 strcpy(chave_min.nome, nome_busca);
                 ChaveRH chave_max = { .data_nascimento = {31, 12, 9999} };
-                strcpy(chave_max.nome, nome_busca);
+                montar_limite_superior_prefixo(nome_busca, chave_max.nome, sizeof(chave_max.nome));
 
                 printf("\nProcurando registros...\n");
                 qtd_resultados_busca = 0;
@@ -380,9 +414,47 @@ int main() {
                 if (qtd_resultados_busca == 1) {
                     chave_exata = resultados_busca[0].chave;
                 } else {
-                    strcpy(chave_exata.nome, nome_busca);
-                    printf("\nForam encontrados homonimos. ");
+                    printf("\nForam encontrados multiplos registros. ");
                     ler_data("Digite a data de nascimento exata do funcionario (DD/MM/AAAA): ", &chave_exata.data_nascimento);
+                    
+                    int indice_encontrado = -1;
+                    int qtd_mesma_data = 0;
+                    for (int i = 0; i < qtd_resultados_busca && i < MAX_RESULTADOS_BUSCA; i++) {
+                        if (resultados_busca[i].chave.data_nascimento.dia == chave_exata.data_nascimento.dia &&
+                            resultados_busca[i].chave.data_nascimento.mes == chave_exata.data_nascimento.mes &&
+                            resultados_busca[i].chave.data_nascimento.ano == chave_exata.data_nascimento.ano) {
+                            indice_encontrado = i;
+                            qtd_mesma_data++;
+                        }
+                    }
+
+                    if (indice_encontrado == -1) {
+                        printf("Nenhum registro correspondente encontrado para a data informada.\n");
+                        break;
+                    }
+
+                    if (qtd_mesma_data > 1) {
+                        char nome_completo[100];
+                        ler_campo_obrigatorio("Mais de um registro tem essa data. Digite o nome completo: ", nome_completo, sizeof(nome_completo));
+                        indice_encontrado = -1;
+
+                        for (int i = 0; i < qtd_resultados_busca && i < MAX_RESULTADOS_BUSCA; i++) {
+                            if (strcmp(resultados_busca[i].chave.nome, nome_completo) == 0 &&
+                                resultados_busca[i].chave.data_nascimento.dia == chave_exata.data_nascimento.dia &&
+                                resultados_busca[i].chave.data_nascimento.mes == chave_exata.data_nascimento.mes &&
+                                resultados_busca[i].chave.data_nascimento.ano == chave_exata.data_nascimento.ano) {
+                                indice_encontrado = i;
+                                break;
+                            }
+                        }
+
+                        if (indice_encontrado == -1) {
+                            printf("Nenhum registro correspondente encontrado para o nome e data informados.\n");
+                            break;
+                        }
+                    }
+
+                    chave_exata = resultados_busca[indice_encontrado].chave;
                 }
 
                 Funcionario *encontrado = (Funcionario*) buscar_bmais(arvore, &chave_exata);
