@@ -18,20 +18,40 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-/* --- Cabeçalho de Controle de cada Nó no Disco --- */
+/**
+ * @brief Cabeçalho de controle armazenado no início de cada nó no disco.
+ * @details Contém metadados do nó:
+ * - eh_folha: true indica nó folha, false indica nó interno.
+ * - num_chaves: quantidade de chaves atualmente armazenadas no nó.
+ * - offset_pai: offset absoluto em disco do nó pai (-1 se for raiz).
+ * - proxima_folha: offset absoluto em disco da próxima folha na lista encadeada (-1 se não houver).
+ */
 typedef struct {
     bool eh_folha;
     int num_chaves;
     long offset_pai;
-    long proxima_folha; 
+    long proxima_folha;
 } CabecalhoNo;
 
-/* --- Estrutura de Controle Principal --- */
+/**
+ * @brief Estrutura de controle principal da árvore B+.
+ * @details Armazena o estado da árvore e as funções callback:
+ * - arquivo: ponteiro FILE* para o arquivo binário em disco.
+ * - ordem: ordem M da árvore B+ (número máximo de ponteiros por nó).
+ * - offset_raiz: offset absoluto do nó raiz no arquivo (-1 se árvore vazia).
+ * - comparar: callback para comparação de duas chaves.
+ * - tamanho_chave: callback que retorna o tamanho em bytes de uma chave.
+ * - tamanho_valor: callback que retorna o tamanho em bytes de um valor.
+ * - escrever_chave: callback para serializar uma chave no disco.
+ * - ler_chave: callback para desserializar uma chave do disco.
+ * - escrever_valor: callback para serializar um valor no disco.
+ * - ler_valor: callback para desserializar um valor do disco.
+ */
 struct BPlusTree {
     FILE *arquivo;
     int ordem;
     long offset_raiz;
-    
+
     FuncaoComparar comparar;
     FuncaoTamanho tamanho_chave;
     FuncaoTamanho tamanho_valor;
@@ -41,17 +61,37 @@ struct BPlusTree {
     FuncaoLer ler_valor;
 };
 
-/* --- Funções de Cálculo de Offsets Genéricos --- */
 
+/**
+ * @brief Calcula o offset absoluto em disco de uma chave dentro de um nó.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento_no Offset absoluto do nó no arquivo.
+ * @param indice Índice da chave (0-based, válido de 0 a ordem-2).
+ * @return long Offset absoluto da chave no arquivo.
+ */
 static long obter_deslocamento_chave(BPlusTree *arvore, long deslocamento_no, int indice) {
     return deslocamento_no + sizeof(CabecalhoNo) + (indice * arvore->tamanho_chave(NULL));
 }
 
+/**
+ * @brief Calcula o offset absoluto em disco de um valor dentro de um nó.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento_no Offset absoluto do nó no arquivo.
+ * @param indice Índice do valor (0-based, válido de 0 a ordem-2).
+ * @return long Offset absoluto do valor no arquivo.
+ */
 static long obter_deslocamento_valor(BPlusTree *arvore, long deslocamento_no, int indice) {
     long inicio_valores = deslocamento_no + sizeof(CabecalhoNo) + ((arvore->ordem - 1) * arvore->tamanho_chave(NULL));
     return inicio_valores + (indice * arvore->tamanho_valor(NULL));
 }
 
+/**
+ * @brief Calcula o offset absoluto em disco de um ponteiro filho dentro de um nó.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento_no Offset absoluto do nó no arquivo.
+ * @param indice Índice do ponteiro (0-based, válido de 0 a ordem-1).
+ * @return long Offset absoluto do ponteiro no arquivo.
+ */
 static long obter_deslocamento_ponteiro(BPlusTree *arvore, long deslocamento_no, int indice) {
     long inicio_ponteiros = deslocamento_no + sizeof(CabecalhoNo) + 
                             ((arvore->ordem - 1) * arvore->tamanho_chave(NULL)) + 
@@ -59,7 +99,16 @@ static long obter_deslocamento_ponteiro(BPlusTree *arvore, long deslocamento_no,
     return inicio_ponteiros + (indice * sizeof(long));
 }
 
-/* --- O CORAÇÃO DA CORREÇÃO: Alocação Segura de Bloco --- */
+
+/**
+ * @brief Aloca um novo nó no final do arquivo em disco.
+ * @details A estratégia é append-only: posiciona-se no final do arquivo
+ * (fseek SEEK_END + ftell), calcula o tamanho total do nó, escreve um
+ * bloco de zeros e retorna o offset obtido. Não há reaproveitamento de
+ * espaço livre entre inserções.
+ * @param arvore Controlador da árvore.
+ * @return long Offset absoluto do novo nó no arquivo.
+ */
 static long alocar_novo_no(BPlusTree *arvore) {
     fseek(arvore->arquivo, 0, SEEK_END);
     long deslocamento = ftell(arvore->arquivo);
@@ -78,8 +127,14 @@ static long alocar_novo_no(BPlusTree *arvore) {
     return deslocamento;
 }
 
-/* --- Funções de I/O em Disco --- */
 
+/**
+ * @brief Lê o cabeçalho de um nó do disco.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento Offset absoluto do nó no arquivo.
+ * @return CabecalhoNo Estrutura com os metadados do nó lidos do disco.
+ *         Se a leitura falhar, retorna um cabeçalho seguro (folha vazia).
+ */
 static CabecalhoNo ler_cabecalho(BPlusTree *arvore, long deslocamento) {
     CabecalhoNo cabecalho;
     fseek(arvore->arquivo, deslocamento, SEEK_SET);
@@ -91,12 +146,23 @@ static CabecalhoNo ler_cabecalho(BPlusTree *arvore, long deslocamento) {
     return cabecalho;
 }
 
+/**
+ * @brief Escreve o cabeçalho de um nó no disco.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento Offset absoluto do nó no arquivo.
+ * @param cabecalho Ponteiro para o cabeçalho a ser escrito.
+ */
 static void escrever_cabecalho(BPlusTree *arvore, long deslocamento, CabecalhoNo *cabecalho) {
     fseek(arvore->arquivo, deslocamento, SEEK_SET);
     fwrite(cabecalho, sizeof(CabecalhoNo), 1, arvore->arquivo);
     fflush(arvore->arquivo);
 }
 
+/**
+ * @brief Cria um novo nó folha vazio no disco.
+ * @param arvore Controlador da árvore.
+ * @return long Offset absoluto do novo nó folha no arquivo.
+ */
 static long criar_no_folha(BPlusTree *arvore) {
     long novo_deslocamento = alocar_novo_no(arvore);
     CabecalhoNo cabecalho = { .eh_folha = true, .num_chaves = 0, .offset_pai = -1, .proxima_folha = -1 };
@@ -104,8 +170,23 @@ static long criar_no_folha(BPlusTree *arvore) {
     return novo_deslocamento;
 }
 
-/* --- Inicialização e Destruição --- */
 
+/**
+ * @brief Cria ou abre uma árvore B+ persistente em disco.
+ * @details Se o arquivo já existir, abre em modo r+b e recupera o offset da raiz
+ * armazenado nos primeiros 8 bytes. Se não existir, cria o arquivo em w+b,
+ * escreve offset_raiz = -1 e inicializa a estrutura.
+ * @param nome_arquivo Nome do arquivo binário.
+ * @param ordem Ordem da árvore B+.
+ * @param comparar Função callback de comparação de chaves.
+ * @param tamanho_chave Função callback de tamanho da chave.
+ * @param tamanho_valor Função callback de tamanho do valor.
+ * @param escrever_chave Função callback de serialização de chave.
+ * @param ler_chave Função callback de desserialização de chave.
+ * @param escrever_valor Função callback de serialização de valor.
+ * @param ler_valor Função callback de desserialização de valor.
+ * @return BPlusTree* Ponteiro alocado para o controlador, ou NULL se falhar.
+ */
 BPlusTree* criar_bmais(const char *nome_arquivo, int ordem, FuncaoComparar comparar,
                               FuncaoTamanho tamanho_chave, FuncaoTamanho tamanho_valor,
                               FuncaoEscrever escrever_chave, FuncaoLer ler_chave,
@@ -133,6 +214,10 @@ BPlusTree* criar_bmais(const char *nome_arquivo, int ordem, FuncaoComparar compa
     return arvore;
 }
 
+/**
+ * @brief Fecha o arquivo em disco e libera o controlador da memória.
+ * @param arvore Controlador da árvore a ser destruído.
+ */
 void destruir_bmais(BPlusTree *arvore) {
     if (arvore) {
         if (arvore->arquivo) fclose(arvore->arquivo);
@@ -140,8 +225,18 @@ void destruir_bmais(BPlusTree *arvore) {
     }
 }
 
-/* --- Operação de Busca --- */
 
+/**
+ * @brief Busca um registro pela chave (busca por igualdade exata).
+ * @details Navega da raiz até a folha comparando chaves nos nós internos.
+ * Quando chega na folha, faz uma varredura linear até encontrar a chave
+ * ou constatar sua ausência. Cada leitura de chave/ponteiro envolve
+ * fseek + fread no disco.
+ * @param arvore Controlador da árvore.
+ * @param chave Ponteiro para a chave a ser buscada.
+ * @return void* Ponteiro alocado (malloc) para o valor encontrado, ou NULL.
+ * @note O ponteiro retornado deve ser liberado com free() pelo chamador.
+ */
 void* buscar_bmais(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return NULL;
     long deslocamento_atual = arvore->offset_raiz;
@@ -177,8 +272,20 @@ void* buscar_bmais(BPlusTree *arvore, void *chave) {
     }
 }
 
-/* --- Lógica de Propagação (Split Pai) --- */
 
+/**
+ * @brief Insere uma chave promovida e o ponteiro do novo filho no nó pai.
+ * @details É chamada quando um nó filho (folha ou interno) se divide.
+ * Três casos:
+ *   - Sem pai (filho era raiz): cria nova raiz interna.
+ *   - Pai com espaço: desloca chaves/ponteiros e insere.
+ *   - Pai cheio: split do pai (lê tudo para arrays, divide, promove
+ *     chave mediana recursivamente).
+ * @param arvore Controlador da árvore.
+ * @param offset_esq Offset do filho esquerdo (nó que já existia).
+ * @param chave_promovida Ponteiro para a chave que sobe para o pai.
+ * @param offset_dir Offset do filho direito (nó recém-criado).
+ */
 static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promovida, long offset_dir) {
     CabecalhoNo cab_esq = ler_cabecalho(arvore, offset_esq);
     long offset_pai = cab_esq.offset_pai;
@@ -319,8 +426,25 @@ static void inserir_no_pai(BPlusTree *arvore, long offset_esq, void *chave_promo
     }
 }
 
-/* --- Inserção e Split de Folha --- */
 
+/**
+ * @brief Insere um par chave-valor na árvore B+.
+ * @details Navega até a folha apropriada, verifica duplicatas e:
+ *   - Se a folha tem espaço: desloca chaves/valores para a direita
+ *     e insere na posição correta (mantendo ordem).
+ *   - Se a folha está cheia: faz o split (lê M+1 pares para arrays
+ *     temporários, divide ao meio, escreve metade em cada nó, promove
+ *     a chave do meio para o pai via inserir_no_pai()).
+ * @param arvore Controlador da árvore.
+ * @param chave Ponteiro para a chave a ser inserida.
+ * @param valor Ponteiro para o valor a ser inserido.
+ * @return int 1 se sucesso, 0 se chave duplicada.
+ * @example
+ * ChaveRH k = { .nome = "Joao", .data_nascimento = {15, 5, 1990} };
+ * Funcionario f;
+ * f.chave = k;
+ * inserir_bmais(arv, &k, &f);
+ */
 int inserir_bmais(BPlusTree *arvore, void *chave, void *valor) {
     if (arvore->offset_raiz == -1) {
         arvore->offset_raiz = criar_no_folha(arvore);
@@ -444,13 +568,27 @@ int inserir_bmais(BPlusTree *arvore, void *chave, void *valor) {
     }
 }
 
-/* --- Remoção --- */
 
+/**
+ * @brief Estrutura auxiliar para armazenar pares chave-valor em memória
+ * durante a operação de remoção.
+ */
 typedef struct {
     void *chave;
     void *valor;
 } RegistroTemporario;
 
+/**
+ * @brief Remove um registro da árvore B+ pela chave.
+ * @details Estratégia simplificada (não implementa merge/rebalance padrão):
+ *   1. Percorre todas as folhas via encadeamento proxima_folha.
+ *   2. Coleta em arrays temporários todos os pares exceto o que deve ser removido.
+ *   3. Trunca o arquivo inteiro com ftruncate().
+ *   4. Reinsere todos os pares restantes um a um com inserir_bmais().
+ * @param arvore Controlador da árvore.
+ * @param chave Ponteiro para a chave a ser removida.
+ * @return int 1 se sucesso, 0 se a chave não for encontrada.
+ */
 int remover_bmais(BPlusTree *arvore, void *chave) {
     if (arvore->offset_raiz == -1) return 0;
 
@@ -536,8 +674,22 @@ int remover_bmais(BPlusTree *arvore, void *chave) {
     return 1;
 }
 
-/* --- Buscas Extras --- */
 
+/**
+ * @brief Lista todos os registros cuja chave pertence ao intervalo aberto (chave_a, chave_b).
+ * @details Navega até a primeira folha relevante (onde chaves > chave_a),
+ * depois percorre linearmente a lista encadeada de folhas via campo
+ * proxima_folha. Para cada chave no intervalo, invoca imprimir_func
+ * com o valor correspondente. A busca para quando chave >= chave_b.
+ * @param arvore Controlador da árvore.
+ * @param chave_a Limite inferior do intervalo (exclusivo).
+ * @param chave_b Limite superior do intervalo (exclusivo).
+ * @param imprimir_func Função callback para processar/exibir cada valor encontrado.
+ * @example
+ * ChaveRH a = { .nome = "Ana", .data_nascimento = {0,0,0} };
+ * ChaveRH b = { .nome = "Carlos", .data_nascimento = {31,12,9999} };
+ * buscar_intervalo_bmais(arv, &a, &b, imprimir_funcionario_intervalo);
+ */
 void buscar_intervalo_bmais(BPlusTree *arvore, void *chave_a, void *chave_b, void (*imprimir_func)(void *valor)) {
     if (arvore->offset_raiz == -1) return;
     long offset_atual = arvore->offset_raiz;
@@ -576,6 +728,13 @@ void buscar_intervalo_bmais(BPlusTree *arvore, void *chave_a, void *chave_b, voi
     }
 }
 
+/**
+ * @brief Função recursiva auxiliar para imprimir um nó e seus descendentes.
+ * @param arvore Controlador da árvore.
+ * @param deslocamento Offset do nó a ser impresso.
+ * @param nivel Nível atual na árvore (0 para raiz).
+ * @param imprimir_chave Função callback para formatar cada chave.
+ */
 static void imprimir_no_recursivo(BPlusTree *arvore, long deslocamento, int nivel, void (*imprimir_chave)(void *chave)) {
     if (deslocamento == -1) return;
     CabecalhoNo cabecalho = ler_cabecalho(arvore, deslocamento);
@@ -602,6 +761,13 @@ static void imprimir_no_recursivo(BPlusTree *arvore, long deslocamento, int nive
     }
 }
 
+/**
+ * @brief Imprime a estrutura hierárquica completa da árvore B+.
+ * @details Exibe cada nó com seu tipo (FOLHA/INTERNO), nível, offset em disco
+ * e as chaves armazenadas. A recursão percorre todos os filhos.
+ * @param arvore Controlador da árvore.
+ * @param imprimir_chave Função callback para formatar e exibir cada chave.
+ */
 void imprimir_estrutura_bmais(BPlusTree *arvore, void (*imprimir_chave)(void *chave)) {
     if (arvore->offset_raiz == -1) { printf("[ESTRUTURA] Arvore Vazia.\n"); return; }
     imprimir_no_recursivo(arvore, arvore->offset_raiz, 0, imprimir_chave);

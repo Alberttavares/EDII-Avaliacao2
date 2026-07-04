@@ -18,14 +18,23 @@
 #include "Bplus.h"
 #include "RH.h"
 
+/** @brief Número máximo de resultados armazenados em uma busca por intervalo. */
 #define MAX_RESULTADOS_BUSCA 100
+/** @brief Ano mínimo aceito para validação de data de nascimento. */
 #define ANO_MINIMO_VALIDO 1900
+/** @brief Ano máximo aceito para validação de data de nascimento. */
 #define ANO_MAXIMO_VALIDO 2026
 
+/** @brief Vetor global para armazenar resultados intermediários de busca. */
 static Funcionario resultados_busca[MAX_RESULTADOS_BUSCA];
+/** @brief Contador global de resultados armazenados no vetor. */
 static int qtd_resultados_busca = 0;
 
-// Função auxiliar para imprimir um funcionário resumido (usado na listagem de homônimos)
+/**
+ * @brief Imprime um resumo do funcionário (nome, data de nascimento, status).
+ * @details Usado como callback nas operações de busca por homônimos e intervalo.
+ * @param val Ponteiro para a estrutura Funcionario a ser exibida.
+ */
 void imprimir_funcionario_resumido(void *val) {
     Funcionario *f = (Funcionario*) val;
     printf(" -> %s (Nascimento: %02d/%02d/%04d) - Status: %s\n", 
@@ -33,7 +42,12 @@ void imprimir_funcionario_resumido(void *val) {
            f->chave.data_nascimento.mes, f->chave.data_nascimento.ano, f->status);
 }
 
-// Callback auxiliar para armazenar e imprimir resultados de busca por nome
+/**
+ * @brief Callback para armazenar resultados de busca por nome no vetor global.
+ * @details Acumula os funcionários encontrados no array estático `resultados_busca`
+ * e exibe um resumo de cada um via imprimir_funcionario_resumido().
+ * @param val Ponteiro para a estrutura Funcionario encontrada.
+ */
 void registrar_funcionario_busca(void *val) {
     Funcionario *f = (Funcionario*) val;
 
@@ -45,12 +59,20 @@ void registrar_funcionario_busca(void *val) {
     imprimir_funcionario_resumido(val);
 }
 
+/**
+ * @brief Callback para contagem e exibição de funcionários em busca por intervalo.
+ * @details Incrementa o contador global e chama imprimir_funcionario_resumido().
+ * @param val Ponteiro para a estrutura Funcionario encontrada.
+ */
 void imprimir_funcionario_intervalo(void *val) {
     qtd_resultados_busca++;
     imprimir_funcionario_resumido(val);
 }
 
-// Função auxiliar para imprimir ficha completa
+/**
+ * @brief Imprime a ficha completa do funcionário, incluindo histórico de pagamentos.
+ * @param f Ponteiro para a estrutura Funcionario.
+ */
 void imprimir_ficha_completa(Funcionario *f) {
     int pagamentos_exibidos = 0;
 
@@ -73,7 +95,11 @@ void imprimir_ficha_completa(Funcionario *f) {
     printf("============================\n");
 }
 
-// Função auxiliar para imprimir dados cadastrais sem histórico de pagamentos
+/**
+ * @brief Imprime dados cadastrais do funcionário sem o histórico de pagamentos.
+ * @details Usado na tela de confirmação de exclusão.
+ * @param f Ponteiro para a estrutura Funcionario.
+ */
 void imprimir_ficha_sem_historico(Funcionario *f) {
     printf("\n=== DADOS CADASTRAIS DO FUNCIONARIO ===\n");
     printf("Nome: %s\n", f->chave.nome);
@@ -88,7 +114,12 @@ void imprimir_ficha_sem_historico(Funcionario *f) {
     printf("=======================================\n");
 }
 
-// Callback para imprimir chave na visualização estrutural da B+
+/**
+ * @brief Callback para formatar e exibir uma chave ChaveRH na visualização estrutural.
+ * @details Exibe apenas o primeiro nome e a data de nascimento no formato
+ * "(nome, DD/MM/AAAA)".
+ * @param chave Ponteiro para a ChaveRH a ser exibida.
+ */
 void imprimir_chave_bmais(void *chave) {
     ChaveRH *k = (ChaveRH*) chave;
     // Pega só o primeiro nome
@@ -97,11 +128,20 @@ void imprimir_chave_bmais(void *chave) {
     printf("(%s, %02d/%02d/%04d)", primeiro_nome, k->data_nascimento.dia, k->data_nascimento.mes, k->data_nascimento.ano);
 }
 
+/**
+ * @brief Limpa o buffer de entrada padrão até encontrar nova linha ou EOF.
+ * @details Usado após fgets() quando a linha lida é maior que o buffer.
+ */
 void limpar_entrada() {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
+/**
+ * @brief Verifica se uma string contém exatamente 11 dígitos numéricos (telefone válido).
+ * @param telefone String de entrada com 11 caracteres.
+ * @return int 1 se válido, 0 caso contrário.
+ */
 int telefone_valido(const char *telefone) {
     if (strlen(telefone) != 11) {
         return 0;
@@ -116,6 +156,11 @@ int telefone_valido(const char *telefone) {
     return 1;
 }
 
+/**
+ * @brief Formata 11 dígitos numéricos no padrão (DD)DDDDD-DDDD.
+ * @param telefone_digitado String com 11 dígitos.
+ * @param telefone_formatado Buffer de saída para o telefone formatado.
+ */
 void formatar_telefone(const char *telefone_digitado, char *telefone_formatado) {
     sprintf(telefone_formatado, "(%c%c)%c%c%c%c%c-%c%c%c%c",
             telefone_digitado[0], telefone_digitado[1],
@@ -125,6 +170,12 @@ void formatar_telefone(const char *telefone_digitado, char *telefone_formatado) 
             telefone_digitado[9], telefone_digitado[10]);
 }
 
+/**
+ * @brief Lê uma linha de texto da entrada padrão, remove a quebra de linha.
+ * @param rotulo Rótulo/mensagem exibida antes da leitura.
+ * @param destino Buffer de destino para o texto lido.
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void ler_campo_texto(const char *rotulo, char *destino, size_t tamanho) {
     printf("%s", rotulo);
     fgets(destino, tamanho, stdin);
@@ -137,6 +188,13 @@ void ler_campo_texto(const char *rotulo, char *destino, size_t tamanho) {
     }
 }
 
+/**
+ * @brief Lê um campo de texto obrigatório (não pode ser vazio).
+ * @details Repete a leitura até que o usuário forneça um valor não vazio.
+ * @param rotulo Rótulo/mensagem exibida antes da leitura.
+ * @param destino Buffer de destino para o texto lido.
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void ler_campo_obrigatorio(const char *rotulo, char *destino, size_t tamanho) {
     do {
         ler_campo_texto(rotulo, destino, tamanho);
@@ -146,6 +204,13 @@ void ler_campo_obrigatorio(const char *rotulo, char *destino, size_t tamanho) {
     } while (strlen(destino) == 0);
 }
 
+/**
+ * @brief Lê um número inteiro da entrada padrão dentro de um intervalo [minimo, maximo].
+ * @param rotulo Rótulo/mensagem exibida antes da leitura.
+ * @param minimo Valor mínimo aceito (inclusivo).
+ * @param maximo Valor máximo aceito (inclusivo).
+ * @return int O inteiro lido dentro do intervalo especificado.
+ */
 int ler_inteiro(const char *rotulo, int minimo, int maximo) {
     int valor;
     int valor_ok = 0;
@@ -167,6 +232,11 @@ int ler_inteiro(const char *rotulo, int minimo, int maximo) {
     return valor;
 }
 
+/**
+ * @brief Verifica se uma Data é válida, considerando meses com diferentes dias e anos bissextos.
+ * @param data Estrutura Data a ser validada.
+ * @return int 1 se a data é válida, 0 caso contrário.
+ */
 int data_valida(Data data) {
     int dias_mes[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
@@ -182,6 +252,11 @@ int data_valida(Data data) {
     return data.dia <= dias_mes[data.mes];
 }
 
+/**
+ * @brief Verifica se a string de entrada tem o formato esperado de data (DD/MM/AAAA ou DD MM AAAA).
+ * @param entrada String contendo a data no formato DD/MM/AAAA ou DD MM AAAA.
+ * @return int 1 se o formato está correto, 0 caso contrário.
+ */
 int formato_data_valido(const char *entrada) {
     if (strlen(entrada) != 10) {
         return 0;
@@ -204,6 +279,13 @@ int formato_data_valido(const char *entrada) {
     return 1;
 }
 
+/**
+ * @brief Converte uma string no formato DD/MM/AAAA ou DD MM AAAA para uma estrutura Data.
+ * @details Valida o formato e a consistência da data antes de converter.
+ * @param entrada String de entrada com a data.
+ * @param destino Ponteiro para a estrutura Data de destino.
+ * @return int 1 se a conversão foi bem-sucedida, 0 caso contrário.
+ */
 int texto_para_data(const char *entrada, Data *destino) {
     Data data_lida;
     char extra;
@@ -219,6 +301,11 @@ int texto_para_data(const char *entrada, Data *destino) {
     return 0;
 }
 
+/**
+ * @brief Lê uma data da entrada padrão, solicitando até que uma data válida seja fornecida.
+ * @param rotulo Rótulo/mensagem exibida antes da leitura.
+ * @param destino Ponteiro para a estrutura Data de destino.
+ */
 void ler_data(const char *rotulo, Data *destino) {
     int data_ok = 0;
 
@@ -240,6 +327,14 @@ void ler_data(const char *rotulo, Data *destino) {
     } while (!data_ok);
 }
 
+/**
+ * @brief Monta o limite superior para busca por prefixo, incrementando o último caractere.
+ * @details Exemplo: "Joao" vira "Joap", criando um limite superior para busca
+ * por intervalo de nomes que começam com "Joao".
+ * @param prefixo String do prefixo a ser incrementado.
+ * @param destino Buffer de destino para o limite superior.
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void montar_limite_superior_prefixo(const char *prefixo, char *destino, size_t tamanho) {
     snprintf(destino, tamanho, "%s", prefixo);
     size_t len = strlen(destino);
@@ -251,12 +346,24 @@ void montar_limite_superior_prefixo(const char *prefixo, char *destino, size_t t
     destino[len - 1] = (char)(destino[len - 1] + 1);
 }
 
+/**
+ * @brief Lê uma data e a armazena como string formatada DD/MM/AAAA.
+ * @param rotulo Rótulo/mensagem exibida antes da leitura.
+ * @param destino Buffer de destino para a string formatada.
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void ler_data_texto(const char *rotulo, char *destino, size_t tamanho) {
     Data data;
     ler_data(rotulo, &data);
     snprintf(destino, tamanho, "%02d/%02d/%04d", data.dia, data.mes, data.ano);
 }
 
+/**
+ * @brief Lê um telefone de 11 dígitos e armazena no formato (DD)DDDDD-DDDD.
+ * @details Valida se a entrada tem exatamente 11 dígitos numéricos.
+ * @param destino Buffer de destino para o telefone formatado.
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void ler_telefone_formatado(char *destino, size_t tamanho) {
     int telefone_ok = 0;
 
@@ -280,6 +387,12 @@ void ler_telefone_formatado(char *destino, size_t tamanho) {
     } while (!telefone_ok);
 }
 
+/**
+ * @brief Compara duas strings ignorando diferenças entre maiúsculas e minúsculas.
+ * @param a Primeira string.
+ * @param b Segunda string.
+ * @return int 1 se as strings são iguais (case-insensitive), 0 caso contrário.
+ */
 int textos_iguais_sem_maiusculas(const char *a, const char *b) {
     while (*a && *b) {
         if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
@@ -292,6 +405,11 @@ int textos_iguais_sem_maiusculas(const char *a, const char *b) {
     return *a == '\0' && *b == '\0';
 }
 
+/**
+ * @brief Lê o status do funcionário (Ativo/Inativo) com validação case-insensitive.
+ * @param destino Buffer de destino para o status ("Ativo" ou "Inativo").
+ * @param tamanho Tamanho máximo do buffer de destino.
+ */
 void ler_status(char *destino, size_t tamanho) {
     int status_ok = 0;
 
@@ -311,6 +429,12 @@ void ler_status(char *destino, size_t tamanho) {
     } while (!status_ok);
 }
 
+/**
+ * @brief Lê todos os dados cadastrais do funcionário (exceto nome e data de nascimento).
+ * @details Solicita nome da mãe, nome do pai, endereço, telefone, data de contratação,
+ * status e, se inativo, data de desligamento.
+ * @param funcionario Ponteiro para a estrutura Funcionario a ser preenchida.
+ */
 void ler_dados_cadastrais(Funcionario *funcionario) {
     ler_campo_obrigatorio("Nome da Mae: ", funcionario->nome_mae, sizeof(funcionario->nome_mae));
     ler_campo_obrigatorio("Nome do Pai: ", funcionario->nome_pai, sizeof(funcionario->nome_pai));
@@ -326,6 +450,18 @@ void ler_dados_cadastrais(Funcionario *funcionario) {
     }
 }
 
+/**
+ * @brief Função principal do sistema de gestão de RH.
+ * @details Inicializa a árvore B+ em disco (ordem 5, arquivo "rh_dados.bin")
+ * e exibe um menu interativo com as opções:
+ *   1. Inserir Funcionario
+ *   2. Buscar Funcionario
+ *   3. Excluir Funcionario
+ *   4. Listagem por Intervalo
+ *   5. Exibir Estrutura do Indice
+ *   6. Sair
+ * @return int 0 em caso de sucesso.
+ */
 int main() {
     // Cria ou abre a Árvore B+ em disco (Arquivo "rh_dados.bin", Ordem 5)
     BPlusTree *arvore = criar_bmais("rh_dados.bin", 5, 
