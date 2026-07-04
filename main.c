@@ -43,8 +43,15 @@ void registrar_funcionario_busca(void *val) {
     imprimir_funcionario_resumido(val);
 }
 
+void imprimir_funcionario_intervalo(void *val) {
+    qtd_resultados_busca++;
+    imprimir_funcionario_resumido(val);
+}
+
 // Função auxiliar para imprimir ficha completa
 void imprimir_ficha_completa(Funcionario *f) {
+    int pagamentos_exibidos = 0;
+
     printf("\n=== FICHA DO FUNCIONARIO ===\n");
     printf("Nome: %s\n", f->chave.nome);
     printf("Data Nasc.: %02d/%02d/%04d\n", f->chave.data_nascimento.dia, f->chave.data_nascimento.mes, f->chave.data_nascimento.ano);
@@ -55,7 +62,11 @@ void imprimir_ficha_completa(Funcionario *f) {
     for(int i = 0; i < 12; i++) {
         if(strlen(f->historico_pagamentos[i].mes_ref) > 0) {
             printf(" [%s] R$ %.2f\n", f->historico_pagamentos[i].mes_ref, f->historico_pagamentos[i].valor);
+            pagamentos_exibidos++;
         }
+    }
+    if (pagamentos_exibidos == 0) {
+        printf(" Nenhum pagamento registrado.\n");
     }
     printf("============================\n");
 }
@@ -124,6 +135,90 @@ void ler_campo_texto(const char *rotulo, char *destino, size_t tamanho) {
     }
 }
 
+void ler_campo_obrigatorio(const char *rotulo, char *destino, size_t tamanho) {
+    do {
+        ler_campo_texto(rotulo, destino, tamanho);
+        if (strlen(destino) == 0) {
+            printf("Campo obrigatorio. Digite um valor.\n");
+        }
+    } while (strlen(destino) == 0);
+}
+
+int ler_inteiro(const char *rotulo, int minimo, int maximo) {
+    int valor;
+    int valor_ok = 0;
+
+    do {
+        char entrada[100];
+        char extra;
+
+        printf("%s", rotulo);
+        fgets(entrada, sizeof(entrada), stdin);
+
+        if (sscanf(entrada, " %d %c", &valor, &extra) == 1 && valor >= minimo && valor <= maximo) {
+            valor_ok = 1;
+        } else {
+            printf("Opcao invalida. Digite um numero entre %d e %d.\n", minimo, maximo);
+        }
+    } while (!valor_ok);
+
+    return valor;
+}
+
+int data_valida(Data data) {
+    int dias_mes[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    if (data.ano < 1 || data.mes < 1 || data.mes > 12 || data.dia < 1) {
+        return 0;
+    }
+
+    if ((data.ano % 400 == 0) || (data.ano % 4 == 0 && data.ano % 100 != 0)) {
+        dias_mes[2] = 29;
+    }
+
+    return data.dia <= dias_mes[data.mes];
+}
+
+int texto_para_data(const char *entrada, Data *destino) {
+    Data data_lida;
+    char extra;
+
+    if ((sscanf(entrada, " %d/%d/%d %c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3 ||
+         sscanf(entrada, " %d %d %d %c", &data_lida.dia, &data_lida.mes, &data_lida.ano, &extra) == 3) &&
+        data_valida(data_lida)) {
+        *destino = data_lida;
+        return 1;
+    }
+
+    return 0;
+}
+
+void ler_data(const char *rotulo, Data *destino) {
+    int data_ok = 0;
+
+    do {
+        char entrada[100];
+        Data data_lida;
+
+        printf("%s", rotulo);
+        fgets(entrada, sizeof(entrada), stdin);
+        entrada[strcspn(entrada, "\n")] = 0;
+
+        if (texto_para_data(entrada, &data_lida)) {
+            *destino = data_lida;
+            data_ok = 1;
+        } else {
+            printf("Data invalida. Use DD/MM/AAAA ou DD MM AAAA.\n");
+        }
+    } while (!data_ok);
+}
+
+void ler_data_texto(const char *rotulo, char *destino, size_t tamanho) {
+    Data data;
+    ler_data(rotulo, &data);
+    snprintf(destino, tamanho, "%02d/%02d/%04d", data.dia, data.mes, data.ano);
+}
+
 void ler_telefone_formatado(char *destino, size_t tamanho) {
     int telefone_ok = 0;
 
@@ -147,16 +242,47 @@ void ler_telefone_formatado(char *destino, size_t tamanho) {
     } while (!telefone_ok);
 }
 
-void ler_dados_cadastrais(Funcionario *funcionario) {
-    ler_campo_texto("Nome da Mae: ", funcionario->nome_mae, sizeof(funcionario->nome_mae));
-    ler_campo_texto("Nome do Pai: ", funcionario->nome_pai, sizeof(funcionario->nome_pai));
-    ler_campo_texto("Endereco: ", funcionario->endereco, sizeof(funcionario->endereco));
-    ler_telefone_formatado(funcionario->telefone, sizeof(funcionario->telefone));
-    ler_campo_texto("Data de Contratacao (DD/MM/AAAA): ", funcionario->data_contratacao, sizeof(funcionario->data_contratacao));
-    ler_campo_texto("Status (Ativo/Inativo): ", funcionario->status, sizeof(funcionario->status));
+int textos_iguais_sem_maiusculas(const char *a, const char *b) {
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
 
-    if (strcmp(funcionario->status, "Inativo") == 0 || strcmp(funcionario->status, "inativo") == 0) {
-        ler_campo_texto("Data de Desligamento (DD/MM/AAAA): ", funcionario->data_desligamento, sizeof(funcionario->data_desligamento));
+    return *a == '\0' && *b == '\0';
+}
+
+void ler_status(char *destino, size_t tamanho) {
+    int status_ok = 0;
+
+    do {
+        char entrada[100];
+
+        ler_campo_texto("Status (Ativo/Inativo): ", entrada, sizeof(entrada));
+        if (textos_iguais_sem_maiusculas(entrada, "Ativo")) {
+            snprintf(destino, tamanho, "Ativo");
+            status_ok = 1;
+        } else if (textos_iguais_sem_maiusculas(entrada, "Inativo")) {
+            snprintf(destino, tamanho, "Inativo");
+            status_ok = 1;
+        } else {
+            printf("Status invalido. Digite Ativo ou Inativo.\n");
+        }
+    } while (!status_ok);
+}
+
+void ler_dados_cadastrais(Funcionario *funcionario) {
+    ler_campo_obrigatorio("Nome da Mae: ", funcionario->nome_mae, sizeof(funcionario->nome_mae));
+    ler_campo_obrigatorio("Nome do Pai: ", funcionario->nome_pai, sizeof(funcionario->nome_pai));
+    ler_campo_obrigatorio("Endereco: ", funcionario->endereco, sizeof(funcionario->endereco));
+    ler_telefone_formatado(funcionario->telefone, sizeof(funcionario->telefone));
+    ler_data_texto("Data de Contratacao (DD/MM/AAAA): ", funcionario->data_contratacao, sizeof(funcionario->data_contratacao));
+    ler_status(funcionario->status, sizeof(funcionario->status));
+
+    if (strcmp(funcionario->status, "Inativo") == 0) {
+        ler_data_texto("Data de Desligamento (DD/MM/AAAA): ", funcionario->data_desligamento, sizeof(funcionario->data_desligamento));
     } else {
         strcpy(funcionario->data_desligamento, "N/A");
     }
@@ -187,9 +313,7 @@ int main() {
         printf("| 5. Exibir Estrutura do Indice        |\n");
         printf("| 6. Sair                              |\n");
         printf("========================================\n");
-        printf("Opcao: ");
-        if (scanf("%d", &opcao) != 1) { limpar_entrada(); opcao = 0; }
-        limpar_entrada();
+        opcao = ler_inteiro("Opcao: ", 1, 6);
 
         switch (opcao) {
             case 1: { // INSERIR
@@ -197,23 +321,16 @@ int main() {
                 memset(&novo, 0, sizeof(Funcionario));
                 
                 printf("\n--- Novo Cadastro ---\n");
-                printf("Nome completo: ");
-                fgets(novo.chave.nome, sizeof(novo.chave.nome), stdin);
-                novo.chave.nome[strcspn(novo.chave.nome, "\n")] = 0;
+                ler_campo_obrigatorio("Nome completo: ", novo.chave.nome, sizeof(novo.chave.nome));
                 
-                printf("Data de Nascimento (DD MM AAAA): ");
-                scanf("%d %d %d", &novo.chave.data_nascimento.dia, &novo.chave.data_nascimento.mes, &novo.chave.data_nascimento.ano);
-                limpar_entrada();
+                ler_data("Data de Nascimento (DD/MM/AAAA): ", &novo.chave.data_nascimento);
 
                 // Verifica se já existe
                 Funcionario *existente = (Funcionario*) buscar_bmais(arvore, &novo.chave);
                 if (existente) {
                     printf("\n[AVISO] Funcionario ja cadastrado!\n");
                     imprimir_ficha_completa(existente);
-                    printf("\nDeseja realizar atualizacao de dados? (1-Sim / 0-Nao): ");
-                    int update;
-                    scanf("%d", &update);
-                    limpar_entrada();
+                    int update = ler_inteiro("\nDeseja realizar atualizacao de dados? (1-Sim / 0-Nao): ", 0, 1);
                     if (update == 1) {
                         novo = *existente;
                         // Na B+, remover e inserir novamente evita sobrescrita parcial de registro.
@@ -242,9 +359,7 @@ int main() {
             case 3: { // EXCLUIR
                 char nome_busca[100];
                 printf("\n--- Pesquisa ---\n");
-                printf("Nome do funcionario: ");
-                fgets(nome_busca, sizeof(nome_busca), stdin);
-                nome_busca[strcspn(nome_busca, "\n")] = 0;
+                ler_campo_obrigatorio("Nome do funcionario: ", nome_busca, sizeof(nome_busca));
 
                 // Cria intervalo falso para achar todos os homônimos
                 ChaveRH chave_min = { .data_nascimento = {0, 0, 0} };
@@ -265,10 +380,9 @@ int main() {
                 if (qtd_resultados_busca == 1) {
                     chave_exata = resultados_busca[0].chave;
                 } else {
-                    printf("\nForam encontrados homonimos. Digite a data de nascimento exata do funcionario (DD MM AAAA): ");
                     strcpy(chave_exata.nome, nome_busca);
-                    scanf("%d %d %d", &chave_exata.data_nascimento.dia, &chave_exata.data_nascimento.mes, &chave_exata.data_nascimento.ano);
-                    limpar_entrada();
+                    printf("\nForam encontrados homonimos. ");
+                    ler_data("Digite a data de nascimento exata do funcionario (DD/MM/AAAA): ", &chave_exata.data_nascimento);
                 }
 
                 Funcionario *encontrado = (Funcionario*) buscar_bmais(arvore, &chave_exata);
@@ -284,10 +398,7 @@ int main() {
                     printf("\n--- Confirmacao de Exclusao ---\n");
                     imprimir_ficha_sem_historico(encontrado);
                     
-                    printf("\nTem certeza que deseja excluir permanentemente do disco? (1-Sim / 0-Nao): ");
-                    int conf;
-                    scanf("%d", &conf);
-                    limpar_entrada();
+                    int conf = ler_inteiro("\nTem certeza que deseja excluir permanentemente do disco? (1-Sim / 0-Nao): ", 0, 1);
                     
                     if (conf == 1) {
                         if(remover_bmais(arvore, &chave_exata)) {
@@ -307,19 +418,25 @@ int main() {
                 ChaveRH chaveB = { .data_nascimento = {0, 0, 0} };
                 
                 printf("\n--- Listagem por Intervalo Alfabético ---\n");
-                printf("Nome Inicial (A): ");
-                fgets(chaveA.nome, sizeof(chaveA.nome), stdin);
-                chaveA.nome[strcspn(chaveA.nome, "\n")] = 0;
-                
-                printf("Nome Final (B): ");
-                fgets(chaveB.nome, sizeof(chaveB.nome), stdin);
-                chaveB.nome[strcspn(chaveB.nome, "\n")] = 0;
+                do {
+                    ler_campo_obrigatorio("Nome Inicial (A): ", chaveA.nome, sizeof(chaveA.nome));
+                    ler_campo_obrigatorio("Nome Final (B): ", chaveB.nome, sizeof(chaveB.nome));
+
+                    if (strcmp(chaveA.nome, chaveB.nome) >= 0) {
+                        printf("Intervalo invalido. O nome inicial deve vir antes do nome final.\n");
+                    }
+                } while (strcmp(chaveA.nome, chaveB.nome) >= 0);
 
                 printf("\nListando funcionarios no intervalo aberto (%s, %s):\n", chaveA.nome, chaveB.nome);
-                buscar_intervalo_bmais(arvore, &chaveA, &chaveB, imprimir_funcionario_resumido);
+                qtd_resultados_busca = 0;
+                buscar_intervalo_bmais(arvore, &chaveA, &chaveB, imprimir_funcionario_intervalo);
+                if (qtd_resultados_busca == 0) {
+                    printf("Nenhum funcionario encontrado no intervalo informado.\n");
+                }
                 break;
             }
             case 5: { // EXIBIR ESTRUTURA
+                printf("\n--- Estrutura do Indice ---\n");
                 imprimir_estrutura_bmais(arvore, imprimir_chave_bmais);
                 break;
             }

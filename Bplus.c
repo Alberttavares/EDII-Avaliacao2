@@ -586,8 +586,8 @@ static void imprimir_no_recursivo(BPlusTree *arvore, long deslocamento, int nive
     for (int i = 0; i < cabecalho.num_chaves; i++) {
         fseek(arvore->arquivo, obter_deslocamento_chave(arvore, deslocamento, i), SEEK_SET);
         void *ck = arvore->ler_chave(arvore->arquivo);
+        if (i > 0) printf(" | ");
         imprimir_chave(ck);
-        printf(" | ");
         free(ck);
     }
     printf("\n");
