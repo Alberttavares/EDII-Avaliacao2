@@ -19,6 +19,8 @@
 #include "RH.h"
 
 #define MAX_RESULTADOS_BUSCA 100
+#define ANO_MINIMO_VALIDO 1900
+#define ANO_MAXIMO_VALIDO 2026
 
 static Funcionario resultados_busca[MAX_RESULTADOS_BUSCA];
 static int qtd_resultados_busca = 0;
@@ -168,7 +170,8 @@ int ler_inteiro(const char *rotulo, int minimo, int maximo) {
 int data_valida(Data data) {
     int dias_mes[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-    if (data.ano < 1 || data.mes < 1 || data.mes > 12 || data.dia < 1) {
+    if (data.ano < ANO_MINIMO_VALIDO || data.ano > ANO_MAXIMO_VALIDO ||
+        data.mes < 1 || data.mes > 12 || data.dia < 1) {
         return 0;
     }
 
@@ -231,7 +234,8 @@ void ler_data(const char *rotulo, Data *destino) {
             *destino = data_lida;
             data_ok = 1;
         } else {
-            printf("Data invalida. Use exatamente DD/MM/AAAA ou DD MM AAAA.\n");
+            printf("Data invalida. Use exatamente DD/MM/AAAA ou DD MM AAAA, com ano entre %d e %d.\n",
+                   ANO_MINIMO_VALIDO, ANO_MAXIMO_VALIDO);
         }
     } while (!data_ok);
 }
